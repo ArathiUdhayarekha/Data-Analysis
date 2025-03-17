@@ -1,0 +1,60 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import pearsonr
+
+# Load Data
+file_path = "QVI_data.csv"
+data = pd.read_csv(file_path)
+
+# Convert DATE column to datetime format
+data['DATE'] = pd.to_datetime(data['DATE'])
+data['YEARMONTH'] = data['DATE'].dt.to_period('M')
+
+# Define trial stores
+trial_stores = [77, 86, 88]
+
+# Compute Monthly Metrics
+monthly_metrics = data.groupby(['STORE_NBR', 'YEARMONTH']).agg(
+    total_sales=('TOT_SALES', 'sum'),
+    num_customers=('LYLTY_CARD_NBR', pd.Series.nunique),
+    transactions_per_customer=('TXN_ID', lambda x: len(x) / x.nunique())
+).reset_index()
+
+# Function to Select Control Store
+def find_control_store(trial_store, metric):
+    trial_store_data = monthly_metrics[monthly_metrics['STORE_NBR'] == trial_store]
+    potential_controls = monthly_metrics[monthly_metrics['STORE_NBR'] != trial_store]
+    
+    correlations = {}
+    for store in potential_controls['STORE_NBR'].unique():
+        store_data = potential_controls[potential_controls['STORE_NBR'] == store]
+        merged = trial_store_data.merge(store_data, on='YEARMONTH', suffixes=('_trial', '_control'))
+        if len(merged) > 0:
+            corr, _ = pearsonr(merged[metric + '_trial'], merged[metric + '_control'])
+            correlations[store] = corr
+    
+    best_match = max(correlations, key=correlations.get)
+    return best_match
+
+# Find control stores
+control_stores = {trial: find_control_store(trial, 'total_sales') for trial in trial_stores}
+print("Control Store Mapping:", control_stores)
+
+# Compare Trial vs. Control Stores
+fig, ax = plt.subplots(figsize=(12, 6))
+for trial, control in control_stores.items():
+    trial_data = monthly_metrics[monthly_metrics['STORE_NBR'] == trial]
+    control_data = monthly_metrics[monthly_metrics['STORE_NBR'] == control]
+    merged = trial_data.merge(control_data, on='YEARMONTH', suffixes=('_trial', '_control'))
+    
+    sns.lineplot(x=merged['YEARMONTH'].astype(str), y=merged['total_sales_trial'], label=f'Trial Store {trial}', ax=ax)
+    sns.lineplot(x=merged['YEARMONTH'].astype(str), y=merged['total_sales_control'], label=f'Control Store {control}', ax=ax)
+    
+ax.set_title("Sales Trends: Trial vs. Control Stores")
+ax.set_xlabel("Month")
+ax.set_ylabel("Total Sales ($)")
+plt.xticks(rotation=45)
+plt.legend()
+plt.show()
