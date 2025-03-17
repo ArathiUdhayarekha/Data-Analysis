@@ -1,0 +1,91 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+
+# Load Data
+customer_data_path = "QVI_purchase_behaviour.csv"
+transaction_data_path = "QVI_transaction_data.xlsx"
+
+customer_data = pd.read_csv(customer_data_path )
+transaction_data = pd.read_excel(transaction_data_path, sheet_name="in")
+
+# Convert DATE to datetime format
+transaction_data["DATE"] = pd.to_datetime(transaction_data["DATE"], origin="1899-12-30", unit="D")
+
+# Extract Pack Size
+def extract_pack_size(product_name):
+    match = re.search(r'(\d+)(?=g)', product_name)
+    return int(match.group(0)) if match else None
+
+transaction_data["PACK_SIZE"] = transaction_data["PROD_NAME"].apply(extract_pack_size)
+
+# Extract Brand Name
+def extract_brand(product_name):
+    return product_name.strip().split()[0]
+
+transaction_data["BRAND"] = transaction_data["PROD_NAME"].apply(extract_brand)
+
+# Merge Data
+merged_data = transaction_data.merge(customer_data, on="LYLTY_CARD_NBR", how="left")
+
+# Handle Missing Pack Size Values
+most_common_pack_size = merged_data["PACK_SIZE"].mode()[0]
+merged_data["PACK_SIZE"].fillna(most_common_pack_size, inplace=True)
+
+# Total Sales by Customer Lifestage
+plt.figure(figsize=(10, 5))
+sns.barplot(data=merged_data, x="LIFESTAGE", y="TOT_SALES", estimator=sum, ci=None, palette="viridis")
+plt.xticks(rotation=45)
+plt.title("Total Sales by Customer Lifestage")
+plt.xlabel("Lifestage")
+plt.ylabel("Total Sales ($)")
+plt.show()
+
+# Total Sales by Premium Customer Category
+plt.figure(figsize=(8, 5))
+sns.barplot(data=merged_data, x="PREMIUM_CUSTOMER", y="TOT_SALES", estimator=sum, ci=None, palette="coolwarm")
+plt.title("Total Sales by Customer Type")
+plt.xlabel("Customer Type")
+plt.ylabel("Total Sales ($)")
+plt.show()
+
+# Top 10 Best-Selling Brands
+top_brands = merged_data.groupby("BRAND")["TOT_SALES"].sum().sort_values(ascending=False).head(10)
+plt.figure(figsize=(10, 5))
+sns.barplot(x=top_brands.index, y=top_brands.values, palette="mako")
+plt.xticks(rotation=45)
+plt.title("Top 10 Best-Selling Chip Brands")
+plt.xlabel("Brand")
+plt.ylabel("Total Sales ($)")
+plt.show()
+
+# Pack Size Preference
+pack_size_sales = merged_data.groupby("PACK_SIZE")["TOT_SALES"].sum().reset_index()
+plt.figure(figsize=(10, 5))
+sns.barplot(data=pack_size_sales, x="PACK_SIZE", y="TOT_SALES", palette="rocket")
+plt.xticks(rotation=45)
+plt.title("Total Sales by Pack Size")
+plt.xlabel("Pack Size (g)")
+plt.ylabel("Total Sales ($)")
+plt.show()
+
+# Price Per Unit Analysis
+merged_data["PRICE_PER_UNIT"] = merged_data["TOT_SALES"] / merged_data["PROD_QTY"]
+price_per_unit_stats = merged_data.groupby("PACK_SIZE")["PRICE_PER_UNIT"].mean().reset_index()
+plt.figure(figsize=(10, 5))
+sns.lineplot(data=price_per_unit_stats, x="PACK_SIZE", y="PRICE_PER_UNIT", marker="o", color="blue")
+plt.title("Average Price per Unit by Pack Size")
+plt.xlabel("Pack Size (g)")
+plt.ylabel("Average Price per Unit ($)")
+plt.show()
+
+# Sales Over Time
+sales_over_time = merged_data.groupby("DATE")["TOT_SALES"].sum().reset_index()
+plt.figure(figsize=(12, 5))
+sns.lineplot(data=sales_over_time, x="DATE", y="TOT_SALES", color="green")
+plt.title("Total Chip Sales Over Time")
+plt.xlabel("Date")
+plt.ylabel("Total Sales ($)")
+plt.show()
